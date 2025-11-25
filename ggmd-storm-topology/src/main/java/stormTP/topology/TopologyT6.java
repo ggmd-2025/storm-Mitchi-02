@@ -1,8 +1,11 @@
 package stormTP.topology;
 
+import java.util.concurrent.TimeUnit;
+
 import org.apache.storm.Config;
 import org.apache.storm.StormSubmitter;
 import org.apache.storm.topology.TopologyBuilder;
+import org.apache.storm.topology.base.BaseWindowedBolt.Duration;
 import org.apache.storm.tuple.Fields;
 
 import stormTP.operator.Exit6Bolt;
@@ -40,8 +43,9 @@ public class TopologyT6 {
 			.fieldsGrouping("tortoise", new Fields("json"));
 
 		// Add RankEvolutionBolt with fieldsGrouping for state consistency
-		// Window configuration: 10 seconds tumbling window
-		builder.setBolt("rankEvo", new RankEvolutionBolt(), nbExecutors)
+		// Window configuration: 10 seconds tumbling window (window length, sliding interval)
+		builder.setBolt("rankEvo", new RankEvolutionBolt()
+			.withWindow(new Duration(10, TimeUnit.SECONDS), new Duration(10, TimeUnit.SECONDS)), nbExecutors)
 			.fieldsGrouping("rank", new Fields("json"));
 
 		// Add exit bolt to output rank evolution data

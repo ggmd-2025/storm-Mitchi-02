@@ -1,6 +1,7 @@
 package stormTP.operator;
 
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.logging.Logger;
 
@@ -8,25 +9,25 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
-import org.apache.storm.state.KeyValueState;
 import org.apache.storm.task.OutputCollector;
 import org.apache.storm.task.TopologyContext;
 import org.apache.storm.topology.OutputFieldsDeclarer;
-import org.apache.storm.topology.base.BaseStatefulWindowedBolt;
+import org.apache.storm.topology.base.BaseWindowedBolt;
 import org.apache.storm.tuple.Fields;
 import org.apache.storm.tuple.Tuple;
 import org.apache.storm.tuple.Values;
 import org.apache.storm.windowing.TupleWindow;
 
 /**
- * Stateful windowed bolt that tracks rank evolution over time
+ * Windowed bolt that tracks rank evolution over time (Storm 1.0.2 compatible)
  * Compares rank at window start vs end to determine progression
+ * Note: Uses in-memory state instead of KeyValueState for Storm 1.0.2 compatibility
  */
-public class RankEvolutionBolt extends BaseStatefulWindowedBolt<KeyValueState<String, String>> {
+public class RankEvolutionBolt extends BaseWindowedBolt {
 
 	private static final long serialVersionUID = 4262369370788107352L;
 	private static Logger logger = Logger.getLogger("RankEvolutionBoltLogger");
-	private KeyValueState<String, String> kvState;
+	private Map<String, String> state; // In-memory state for Storm 1.0.2
 	private OutputCollector collector;
 	private ObjectMapper mapper;
 
@@ -72,8 +73,8 @@ public class RankEvolutionBolt extends BaseStatefulWindowedBolt<KeyValueState<St
 				evolution = "En régression";
 			}
 
-			// Store first rank for next window
-			kvState.put("firstRank_" + id, lastRang);
+			// Store last rank for next window comparison (in-memory)
+			state.put("firstRank_" + id, lastRang);
 
 			// Get current timestamp
 			String timestamp = Instant.now().toString();
@@ -104,16 +105,12 @@ public class RankEvolutionBolt extends BaseStatefulWindowedBolt<KeyValueState<St
 	}
 
 	@Override
-	public void initState(KeyValueState<String, String> state) {
-		kvState = state;
-		logger.info("RankEvolutionBolt state initialized");
-	}
-
-	@Override
 	@SuppressWarnings("rawtypes")
 	public void prepare(Map stormConf, TopologyContext context, OutputCollector collector) {
 		this.collector = collector;
 		this.mapper = new ObjectMapper();
+		this.state = new HashMap<>(); // Initialize in-memory state
+		logger.info("RankEvolutionBolt initialized (Storm 1.0.2 compatible)");
 	}
 
 	@Override
