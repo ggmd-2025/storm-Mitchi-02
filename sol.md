@@ -436,36 +436,50 @@ storm jar target/stormTP-0.1.jar stormTP.topology.TopologyT6 9001 9005
 ## Quick Reference: Commands Summary
 
 ```bash
-# Terminal 1: Start cluster
+# Terminal 1: Start cluster (leave running)
 docker compose up
 
-# Terminal 2: Start stream
+# Terminal 2: Start stream (wait for "Server Started ....")
 docker compose exec client /bin/bash
 cd /ggmd-storm-stream && mvn package
-./startStream.sh tortoise 10 145 9001
+./startStream.sh tortoise 10 150 9001
 
-# Terminal 3: Build and submit topology (repeat for each T2-T6)
+# Terminal 3: Build and submit topology (run BEFORE stream times out)
 docker compose exec -it client /bin/bash
 cd /storm/examples/ggmd-storm-topology
 mvn package
 storm jar target/stormTP-0.1.jar stormTP.topology.TopologyT2 9001 9005
 
-# Terminal 4: Listen to output
+# Terminal 4: Listen to output (run BEFORE topology produces data)
 docker compose exec -it client /bin/bash
 cd /ggmd-storm-listner && mvn package
 ./startListner.sh 9005
+
+# View Storm UI: http://localhost:8081
 
 # Stop topology via UI or:
 storm kill topoT2 -w 0
 ```
 
+## Important Timing Notes
+
+The stream producer **waits for a client to connect** before sending data:
+1. Stream starts and listens on port 9001
+2. Stream waits for InputStreamSpout to connect (blocking at `server.accept()`)
+3. Topology must be submitted quickly to establish connection
+4. Once connected, stream sends JSON with all runners every 5 seconds (tortoise delay)
+5. MyTortoiseBolt filters the array and emits individual tuples for the target tortoise
+6. **Listener should be running BEFORE topology is submitted** to avoid losing initial data
+
 ---
 
 ## Important Notes
 
-1. **Modify InputStreamSpout host**: Change `"127.0.0.1"` to `"client"` in topologies (see README.md)
-2. **Kill topology before next**: Always stop previous topology before testing new one
-3. **Check logs**: Use Storm UI at http://localhost:8081 to monitor topology
-4. **State management**: Use `fieldsGrouping()` for stateful bolts to ensure consistent state
-5. **JSON parsing**: Use `javax.json` library for JSON manipulation
-6. **Tuple schema**: Always declare output fields in `declareOutputFields()`
+1. **JSON Format**: Stream sends `{"timestamp": ..., "runners": [...]}` - MyTortoiseBolt handles parsing the array
+2. **Modify InputStreamSpout host**: Already set to `"client"` in topologies (correct for Docker)
+3. **Kill topology before next**: Always stop previous topology before testing new one
+4. **Check logs**: Use Storm UI at http://localhost:8081 to monitor topology
+5. **State management**: Use `fieldsGrouping()` for stateful bolts to ensure consistent state
+6. **JSON parsing**: Use `javax.json` library for JSON manipulation
+7. **Tuple schema**: Always declare output fields in `declareOutputFields()`
+8. **Broken Pipe Error**: Usually means no client connected to stream producer - ensure topology connects within a few seconds
