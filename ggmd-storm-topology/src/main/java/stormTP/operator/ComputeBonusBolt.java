@@ -3,10 +3,9 @@ package stormTP.operator;
 import java.util.Map;
 import java.util.logging.Logger;
 
-import javax.json.Json;
-import javax.json.JsonObject;
-import javax.json.JsonObjectBuilder;
-import javax.json.JsonReader;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import org.apache.storm.state.KeyValueState;
 import org.apache.storm.task.OutputCollector;
@@ -17,8 +16,6 @@ import org.apache.storm.tuple.Fields;
 import org.apache.storm.tuple.Tuple;
 import org.apache.storm.tuple.Values;
 
-import java.io.StringReader;
-
 /**
  * Stateful bolt that calculates cumulative bonus points every 15 observations
  */
@@ -28,22 +25,19 @@ public class ComputeBonusBolt extends BaseStatefulBolt<KeyValueState<String, Str
 	private static Logger logger = Logger.getLogger("ComputeBonusBoltLogger");
 	private KeyValueState<String, String> kvState;
 	private OutputCollector collector;
+	private ObjectMapper mapper;
 
 	@Override
 	public void execute(Tuple t) {
 		try {
 			String jsonStr = t.getValueByField("json").toString();
+			JsonNode inputJson = mapper.readTree(jsonStr);
 
-			// Parse incoming JSON
-			JsonReader reader = Json.createReader(new StringReader(jsonStr));
-			JsonObject inputJson = reader.readObject();
-			reader.close();
-
-			int id = inputJson.getInt("id");
-			long top = inputJson.getJsonNumber("top").longValue();
-			String rang = inputJson.getString("rang");
-			int total = inputJson.getInt("total");
-			int maxcel = inputJson.getInt("maxcel");
+			int id = inputJson.get("id").asInt();
+			long top = inputJson.get("top").asLong();
+			String rang = inputJson.get("rang").asText();
+			int total = inputJson.get("total").asInt();
+			int maxcel = inputJson.get("maxcel").asInt();
 
 			// Check if we're at a bonus calculation point (every 15 observations)
 			if (top > 0 && top % 15 == 0) {
@@ -66,15 +60,15 @@ public class ComputeBonusBolt extends BaseStatefulBolt<KeyValueState<String, Str
 				String topsRange = "t" + topStart + "-t" + top;
 
 				// Build output JSON
-				JsonObjectBuilder output = Json.createObjectBuilder();
-				output.add("id", id);
-				output.add("tops", topsRange);
-				output.add("score", currentScore);
+				ObjectNode output = mapper.createObjectNode();
+				output.put("id", id);
+				output.put("tops", topsRange);
+				output.put("score", currentScore);
 
-				JsonObject result = output.build();
+				String result = mapper.writeValueAsString(output);
 				logger.info("Bonus for tortoise " + id + " at top " + top + ": bonus=" + bonus + ", total=" + currentScore);
 
-				collector.emit(t, new Values(result.toString()));
+				collector.emit(t, new Values(result));
 				collector.ack(t);
 			} else {
 				// Not a bonus point, just pass through (ack but don't emit)
@@ -102,6 +96,7 @@ public class ComputeBonusBolt extends BaseStatefulBolt<KeyValueState<String, Str
 	@SuppressWarnings("rawtypes")
 	public void prepare(Map stormConf, TopologyContext context, OutputCollector collector) {
 		this.collector = collector;
+		this.mapper = new ObjectMapper();
 	}
 
 	@Override

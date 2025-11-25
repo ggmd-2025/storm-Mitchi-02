@@ -1,82 +1,20 @@
-# Solution Guide: Tortoise Race Storm Topology (Part 2)
-
-This guide provides step-by-step commands and implementation instructions starting from **#### Filtrer une tortue** (task.md line 21).
-
----
-
-## Overview of Tasks
-
-From task.md, you need to implement 5 main features, each with its own bolt, exit bolt, and topology:
-
-1. **T2**: MyTortoiseBolt - Filter and enrich tortoise data
-2. **T3**: GiveRankBolt - Calculate tortoise rankings
-3. **T4**: ComputeBonusBolt - Calculate cumulative bonus points
-4. **T5**: SpeedBolt - Calculate average speed over window
-5. **T6**: RankEvolutionBolt - Track rank progression over time
-
----
+# Solution Guide
 
 ## Task T2: Filtrer une tortue (Filter a Tortoise)
 
 **Objective**: Implement a stateless bolt that filters a single tortoise and enriches the data.
 
-### Step 1: Implement MyTortoiseBolt
-
 Create file: `/storm/examples/ggmd-storm-topology/src/main/java/stormTP/operator/MyTortoiseBolt.java`
-
-Key requirements:
-
--   Stateless bolt (implements IRichBolt)
--   Filters tuples by tortoise ID (configurable in constructor)
--   Input schema: `(json)` - parsed as (id, top, tour, cellule, total, maxcel)
--   Output schema: `(id, top, nom, nbCellsParcourus, total, maxcel)`
--   Must assign a custom tortoise name
--   Calculate cumulative cells traveled: `cellule + (tour * maxcel)`
-
-Pattern to follow:
-
--   Parse incoming JSON using `javax.json`
--   Extract fields: id, top, tour, cellule, total, maxcel
--   Check if id matches filter ID
--   Calculate cells traveled
--   Build new JSON with output schema
--   Emit tuple
-
-### Step 2: Implement Exit2Bolt
 
 Create file: `/storm/examples/ggmd-storm-topology/src/main/java/stormTP/operator/Exit2Bolt.java`
 
-Key requirements:
-
--   Terminal bolt (implements IRichBolt)
--   Constructor takes: `int port`
--   Input schema: `(id, top, nom, nbCellsParcourus, total, maxcel)`
--   Output: JSON tuple to TCP port using `StreamEmiter`
--   Must preserve all fields in output JSON
-
-### Step 3: Create TopologyT2
-
 Create file: `/storm/examples/ggmd-storm-topology/src/main/java/stormTP/topology/TopologyT2.java`
-
-Key requirements:
-
--   Topology structure:
-    ```
-    InputStreamSpout (9001) → MyTortoiseBolt (id=3) → Exit2Bolt (9005)
-    ```
--   Constructor parameters: `portINPUT` and `portOUTPUT`
--   Use `shuffleGrouping()` for data distribution
--   Configuration: Use default Storm config (from TopologyT1 as template)
--   Submission name: "topoT2"
-
-### Step 4: Build and Test
 
 ```bash
 # In Terminal 3
-mvn package
+mvn clean package
 
-# Submit topology to Storm
-storm jar target/stormTP-0.1.jar stormTP.topology.TopologyT2 9001 9005
+storm jar target/stormTP-0.1-jar-with-dependencies.jar stormTP.topology.TopologyT2 9001 9005
 
 # In Terminal 4 (listener)
 cd /ggmd-storm-listner
@@ -84,18 +22,16 @@ mvn package
 ./startListner.sh 9005
 ```
 
-**Expected Output**: JSON objects with fields: `id, top, nom, nbCellsParcourus, total, maxcel`
-
-Example:
+Output:
 
 ```json
 {
     "id": 3,
-    "top": 15,
-    "nom": "Caroline",
-    "nbCellsParcourus": 42,
+    "top": 2,
+    "nom": "David",
+    "nbCellsParcourus": 2,
     "total": 10,
-    "maxcel": 145
+    "maxcel": 150
 }
 ```
 
@@ -105,76 +41,27 @@ Example:
 
 **Objective**: Implement a stateless bolt that calculates and ranks all tortoises.
 
-### Step 1: Implement GiveRankBolt
-
 Create file: `/storm/examples/ggmd-storm-topology/src/main/java/stormTP/operator/GiveRankBolt.java`
-
-Key requirements:
-
--   **Important**: This is a stateful bolt! Must maintain state of all tortoises to rank them
--   Extends `BaseStatefulBolt<KeyValueState<String, JsonArray>>`
--   Input schema: `(json)` - parsed as (id, top, tour, cellule, total, maxcel)
--   Output schema: `(id, top, rang, total, maxcel)`
--   Ranking calculation:
-    -   Position on track: `cellule + (tour * maxcel)` (absolute position)
-    -   Compare position of all tortoises with same `top`
-    -   Rank them 1, 2, 3... based on position
-    -   Handle ties with 'ex' suffix: "1ex", "2ex", etc.
--   Must store last known position of each tortoise in state
-
-Algorithm:
-
-1. Receive tuple with (id, top, tour, cellule, total, maxcel)
-2. Calculate absolute position: `position = cellule + (tour * maxcel)`
-3. Store in state: `state.put("tortoise_" + id, position)`
-4. When position value changes for this `top`:
-    - Get all positions from state
-    - Sort by position (descending)
-    - Assign ranks with 'ex' suffix for ties
-    - Emit tuple with (id, top, rang, total, maxcel)
-
-### Step 2: Implement Exit3Bolt
 
 Create file: `/storm/examples/ggmd-storm-topology/src/main/java/stormTP/operator/Exit3Bolt.java`
 
-Key requirements:
-
--   Terminal bolt (implements IRichBolt)
--   Constructor takes: `int port`
--   Input schema: `(id, top, rang, total, maxcel)`
--   Output: JSON tuple to TCP port
-
-### Step 3: Create TopologyT3
-
 Create file: `/storm/examples/ggmd-storm-topology/src/main/java/stormTP/topology/TopologyT3.java`
 
-Key requirements:
-
--   Topology structure:
-    ```
-    InputStreamSpout (9001) → GiveRankBolt → Exit3Bolt (9005)
-    ```
--   Use `fieldsGrouping("top")` to ensure same observation goes to same executor
--   This allows state to work correctly (all tuples with same top together)
-
-### Step 4: Build and Test
-
 ```bash
-# Kill previous topology via Storm UI (KILL button, set 0)
-# Then:
+#Terminal 3
+mvn clean package
+storm jar target/stormTP-0.1-jar-with-dependencies.jar stormTP.topology.TopologyT3 9001 9005
 
-mvn package
-storm jar target/stormTP-0.1.jar stormTP.topology.TopologyT3 9001 9005
-
-# In listener terminal:
+# Terminal 4:
 ./startListner.sh 9005
 ```
 
-**Expected Output**:
+**Output**:
 
 ```json
-{"id": 3, "top": 15, "rang": "3", "total": 10, "maxcel": 145}
-{"id": 1, "top": 15, "rang": "1ex", "total": 10, "maxcel": 145}
+{"id":3,"top":2,"rang":"1","total":10,"maxcel":150}
+{"id":3,"top":2,"rang":"1","total":10,"maxcel":150}
+{"id":3,"top":2,"rang":"1","total":10,"maxcel":150}
 ```
 
 ---
@@ -244,8 +131,8 @@ Key requirements:
 ### Step 4: Build and Test
 
 ```bash
-mvn package
-storm jar target/stormTP-0.1.jar stormTP.topology.TopologyT4 9001 9005
+mvn clean package
+storm jar target/stormTP-0.1-jar-with-dependencies.jar stormTP.topology.TopologyT4 9001 9005
 
 # In listener terminal:
 ./startListner.sh 9005
@@ -328,8 +215,8 @@ Key requirements:
 ### Step 4: Build and Test
 
 ```bash
-mvn package
-storm jar target/stormTP-0.1.jar stormTP.topology.TopologyT5 9001 9005
+mvn clean package
+storm jar target/stormTP-0.1-jar-with-dependencies.jar stormTP.topology.TopologyT5 9001 9005
 
 # In listener terminal:
 ./startListner.sh 9005
@@ -417,8 +304,8 @@ Key requirements:
 ### Step 4: Build and Test
 
 ```bash
-mvn package
-storm jar target/stormTP-0.1.jar stormTP.topology.TopologyT6 9001 9005
+mvn clean package
+storm jar target/stormTP-0.1-jar-with-dependencies.jar stormTP.topology.TopologyT6 9001 9005
 
 # In listener terminal:
 ./startListner.sh 9005
@@ -447,8 +334,8 @@ cd /ggmd-storm-stream && mvn package
 # Terminal 3: Build and submit topology (run BEFORE stream times out)
 docker compose exec -it client /bin/bash
 cd /storm/examples/ggmd-storm-topology
-mvn package
-storm jar target/stormTP-0.1.jar stormTP.topology.TopologyT2 9001 9005
+mvn clean package
+storm jar target/stormTP-0.1-jar-with-dependencies.jar stormTP.topology.TopologyT2 9001 9005
 
 # Terminal 4: Listen to output (run BEFORE topology produces data)
 docker compose exec -it client /bin/bash
@@ -464,6 +351,7 @@ storm kill topoT2 -w 0
 ## Important Timing Notes
 
 The stream producer **waits for a client to connect** before sending data:
+
 1. Stream starts and listens on port 9001
 2. Stream waits for InputStreamSpout to connect (blocking at `server.accept()`)
 3. Topology must be submitted quickly to establish connection
@@ -480,6 +368,7 @@ The stream producer **waits for a client to connect** before sending data:
 3. **Kill topology before next**: Always stop previous topology before testing new one
 4. **Check logs**: Use Storm UI at http://localhost:8081 to monitor topology
 5. **State management**: Use `fieldsGrouping()` for stateful bolts to ensure consistent state
-6. **JSON parsing**: Use `javax.json` library for JSON manipulation
-7. **Tuple schema**: Always declare output fields in `declareOutputFields()`
-8. **Broken Pipe Error**: Usually means no client connected to stream producer - ensure topology connects within a few seconds
+6. **JSON parsing**: Uses Jackson library (com.fasterxml.jackson.databind) - included in jar-with-dependencies
+7. **JAR with dependencies**: Always use `target/stormTP-0.1-jar-with-dependencies.jar` (includes Jackson), not `target/stormTP-0.1.jar`
+8. **Tuple schema**: Always declare output fields in `declareOutputFields()`
+9. **Broken Pipe Error**: Usually means no client connected to stream producer - ensure topology connects within a few seconds

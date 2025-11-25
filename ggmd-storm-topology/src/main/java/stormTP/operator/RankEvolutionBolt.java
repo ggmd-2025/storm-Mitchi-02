@@ -4,10 +4,9 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.logging.Logger;
 
-import javax.json.Json;
-import javax.json.JsonObject;
-import javax.json.JsonObjectBuilder;
-import javax.json.JsonReader;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import org.apache.storm.state.KeyValueState;
 import org.apache.storm.task.OutputCollector;
@@ -19,8 +18,6 @@ import org.apache.storm.tuple.Tuple;
 import org.apache.storm.tuple.Values;
 import org.apache.storm.windowing.TupleWindow;
 
-import java.io.StringReader;
-
 /**
  * Stateful windowed bolt that tracks rank evolution over time
  * Compares rank at window start vs end to determine progression
@@ -31,6 +28,7 @@ public class RankEvolutionBolt extends BaseStatefulWindowedBolt<KeyValueState<St
 	private static Logger logger = Logger.getLogger("RankEvolutionBoltLogger");
 	private KeyValueState<String, String> kvState;
 	private OutputCollector collector;
+	private ObjectMapper mapper;
 
 	@Override
 	public void execute(TupleWindow inputWindow) {
@@ -45,21 +43,17 @@ public class RankEvolutionBolt extends BaseStatefulWindowedBolt<KeyValueState<St
 
 			// Parse first tuple
 			String firstJsonStr = firstTuple.getValueByField("json").toString();
-			JsonReader firstReader = Json.createReader(new StringReader(firstJsonStr));
-			JsonObject firstJson = firstReader.readObject();
-			firstReader.close();
+			JsonNode firstJson = mapper.readTree(firstJsonStr);
 
-			int id = firstJson.getInt("id");
-			String nom = firstJson.getString("nom");
-			String firstRang = firstJson.getString("rang");
+			int id = firstJson.get("id").asInt();
+			String nom = firstJson.get("nom").asText();
+			String firstRang = firstJson.get("rang").asText();
 
 			// Parse last tuple
 			String lastJsonStr = lastTuple.getValueByField("json").toString();
-			JsonReader lastReader = Json.createReader(new StringReader(lastJsonStr));
-			JsonObject lastJson = lastReader.readObject();
-			lastReader.close();
+			JsonNode lastJson = mapper.readTree(lastJsonStr);
 
-			String lastRang = lastJson.getString("rang");
+			String lastRang = lastJson.get("rang").asText();
 
 			// Parse rank numbers (remove 'ex' suffix)
 			int firstRankNum = Integer.parseInt(firstRang.replace("ex", ""));
@@ -85,18 +79,18 @@ public class RankEvolutionBolt extends BaseStatefulWindowedBolt<KeyValueState<St
 			String timestamp = Instant.now().toString();
 
 			// Build output JSON
-			JsonObjectBuilder output = Json.createObjectBuilder();
-			output.add("id", id);
-			output.add("nom", nom);
-			output.add("date", timestamp);
-			output.add("evolution", evolution);
+			ObjectNode output = mapper.createObjectNode();
+			output.put("id", id);
+			output.put("nom", nom);
+			output.put("date", timestamp);
+			output.put("evolution", evolution);
 
-			JsonObject result = output.build();
+			String result = mapper.writeValueAsString(output);
 			logger.info("Evolution for tortoise " + id + " (" + nom + "): " + evolution +
 				" (from " + firstRang + " to " + lastRang + ")");
 
 			// Emit with all tuples in window for proper acknowledgement
-			collector.emit(inputWindow.get(), new Values(result.toString()));
+			collector.emit(inputWindow.get(), new Values(result));
 
 		} catch (Exception e) {
 			System.err.println("Error in RankEvolutionBolt: " + e.getMessage());
@@ -119,6 +113,7 @@ public class RankEvolutionBolt extends BaseStatefulWindowedBolt<KeyValueState<St
 	@SuppressWarnings("rawtypes")
 	public void prepare(Map stormConf, TopologyContext context, OutputCollector collector) {
 		this.collector = collector;
+		this.mapper = new ObjectMapper();
 	}
 
 	@Override

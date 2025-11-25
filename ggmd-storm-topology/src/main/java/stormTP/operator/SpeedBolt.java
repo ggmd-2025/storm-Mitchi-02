@@ -3,10 +3,9 @@ package stormTP.operator;
 import java.util.Map;
 import java.util.logging.Logger;
 
-import javax.json.Json;
-import javax.json.JsonObject;
-import javax.json.JsonObjectBuilder;
-import javax.json.JsonReader;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import org.apache.storm.task.OutputCollector;
 import org.apache.storm.task.TopologyContext;
@@ -17,7 +16,6 @@ import org.apache.storm.tuple.Tuple;
 import org.apache.storm.tuple.Values;
 import org.apache.storm.windowing.TupleWindow;
 
-import java.io.StringReader;
 import java.text.DecimalFormat;
 
 /**
@@ -30,10 +28,12 @@ public class SpeedBolt extends BaseWindowedBolt {
 	private static final long serialVersionUID = 4262369370788107350L;
 	private static Logger logger = Logger.getLogger("SpeedBoltLogger");
 	private OutputCollector collector;
+	private ObjectMapper mapper;
 
 	@Override
 	public void prepare(Map stormConf, TopologyContext context, OutputCollector collector) {
 		this.collector = collector;
+		this.mapper = new ObjectMapper();
 	}
 
 	@Override
@@ -53,16 +53,12 @@ public class SpeedBolt extends BaseWindowedBolt {
 
 			for (Tuple tuple : inputWindow.get()) {
 				String jsonStr = tuple.getValueByField("json").toString();
+				JsonNode inputJson = mapper.readTree(jsonStr);
 
-				// Parse JSON
-				JsonReader reader = Json.createReader(new StringReader(jsonStr));
-				JsonObject inputJson = reader.readObject();
-				reader.close();
-
-				id = inputJson.getInt("id");
-				nom = inputJson.getString("nom");
-				long top = inputJson.getJsonNumber("top").longValue();
-				int nbCells = inputJson.getInt("nbCellsParcourus");
+				id = inputJson.get("id").asInt();
+				nom = inputJson.get("nom").asText();
+				long top = inputJson.get("top").asLong();
+				int nbCells = inputJson.get("nbCellsParcourus").asInt();
 
 				// Track first and last tops
 				if (firstTop == -1) {
@@ -88,17 +84,17 @@ public class SpeedBolt extends BaseWindowedBolt {
 			String speedStr = df.format(speed);
 
 			// Build output JSON
-			JsonObjectBuilder output = Json.createObjectBuilder();
-			output.add("id", id);
-			output.add("nom", nom);
-			output.add("tops", "t" + firstTop + "-t" + lastTop);
-			output.add("vitesse", Double.parseDouble(speedStr));
+			ObjectNode output = mapper.createObjectNode();
+			output.put("id", id);
+			output.put("nom", nom);
+			output.put("tops", "t" + firstTop + "-t" + lastTop);
+			output.put("vitesse", Double.parseDouble(speedStr));
 
-			JsonObject result = output.build();
+			String result = mapper.writeValueAsString(output);
 			logger.info("Speed for tortoise " + id + " (" + nom + "): " + speedStr + " cells/top");
 
 			// Emit with all tuples in window for proper acknowledgement
-			collector.emit(inputWindow.get(), new Values(result.toString()));
+			collector.emit(inputWindow.get(), new Values(result));
 
 		} catch (Exception e) {
 			System.err.println("Error in SpeedBolt: " + e.getMessage());

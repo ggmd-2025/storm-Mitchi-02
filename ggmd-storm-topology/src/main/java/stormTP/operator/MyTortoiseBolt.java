@@ -2,8 +2,10 @@ package stormTP.operator;
 
 import java.util.Map;
 import java.util.logging.Logger;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import org.apache.storm.task.OutputCollector;
 import org.apache.storm.task.TopologyContext;
@@ -15,7 +17,6 @@ import org.apache.storm.tuple.Values;
 
 /**
  * Filter a single tortoise by ID and enrich it with custom name and cumulative cells traveled
- * Uses simple String parsing to avoid external JSON library dependencies
  */
 public class MyTortoiseBolt implements IRichBolt {
 
@@ -23,6 +24,7 @@ public class MyTortoiseBolt implements IRichBolt {
 	private static Logger logger = Logger.getLogger("MyTortoiseBoltLogger");
 	private OutputCollector collector;
 	private int tortoiseId;
+	private ObjectMapper mapper;
 
 	// Tortoise names for each ID
 	private static final String[] TORTOISE_NAMES = {
@@ -32,45 +34,31 @@ public class MyTortoiseBolt implements IRichBolt {
 
 	public MyTortoiseBolt(int tortoiseId) {
 		this.tortoiseId = tortoiseId;
-	}
-
-	private long extractLong(String json, String key) {
-		Pattern pattern = Pattern.compile("\"" + key + "\"\\s*:\\s*(\\d+)");
-		Matcher matcher = pattern.matcher(json);
-		if (matcher.find()) {
-			return Long.parseLong(matcher.group(1));
-		}
-		return 0;
-	}
-
-	private String buildJson(long id, long top, String nom, long nbCellsParcourus, long total, long maxcel) {
-		return String.format("{\"id\":%d,\"top\":%d,\"nom\":\"%s\",\"nbCellsParcourus\":%d,\"total\":%d,\"maxcel\":%d}",
-			id, top, nom, nbCellsParcourus, total, maxcel);
+		this.mapper = new ObjectMapper();
 	}
 
 	@Override
 	public void execute(Tuple t) {
 		try {
 			String jsonStr = t.getValueByField("json").toString();
+			JsonNode inputJson = mapper.readTree(jsonStr);
 
 			// Check if this is a wrapped message with "timestamp" and "runners" array
-			if (jsonStr.contains("\"runners\"")) {
+			if (inputJson.has("runners")) {
 				// New format: {"timestamp": ..., "runners": [...]}
-				// Use regex to find all runner objects: {"id":N,"top":N,...}
-				Pattern runnerPattern = Pattern.compile("\\{\"id\":(\\d+),\"top\":(\\d+),\"tour\":(\\d+),\"cellule\":(\\d+),\"total\":(\\d+),\"maxcel\":(\\d+)\\}");
-				Matcher matcher = runnerPattern.matcher(jsonStr);
+				JsonNode runners = inputJson.get("runners");
 
-				boolean found = false;
-				while (matcher.find()) {
-					long id = Long.parseLong(matcher.group(1));
-					long top = Long.parseLong(matcher.group(2));
-					long tour = Long.parseLong(matcher.group(3));
-					long cellule = Long.parseLong(matcher.group(4));
-					long total = Long.parseLong(matcher.group(5));
-					long maxcel = Long.parseLong(matcher.group(6));
+				for (JsonNode runner : runners) {
+					long id = runner.get("id").asLong();
 
 					// Filter by tortoise ID
 					if (id == tortoiseId) {
+						long top = runner.get("top").asLong();
+						long tour = runner.get("tour").asLong();
+						long cellule = runner.get("cellule").asLong();
+						long total = runner.get("total").asLong();
+						long maxcel = runner.get("maxcel").asLong();
+
 						// Calculate cumulative cells traveled
 						long nbCellsParcourus = cellule + (tour * maxcel);
 
@@ -78,25 +66,32 @@ public class MyTortoiseBolt implements IRichBolt {
 						String nom = TORTOISE_NAMES[(int)(id % TORTOISE_NAMES.length)];
 
 						// Build output JSON
-						String result = buildJson(id, top, nom, nbCellsParcourus, total, maxcel);
+						ObjectNode output = mapper.createObjectNode();
+						output.put("id", id);
+						output.put("top", top);
+						output.put("nom", nom);
+						output.put("nbCellsParcourus", nbCellsParcourus);
+						output.put("total", total);
+						output.put("maxcel", maxcel);
+
+						String result = mapper.writeValueAsString(output);
 						logger.info("Tortoise " + id + " => " + result + " treated!");
 
 						collector.emit(t, new Values(result));
-						found = true;
 					}
 				}
 				collector.ack(t);
 			} else {
 				// Old format: direct runner object
-				long id = extractLong(jsonStr, "id");
+				long id = inputJson.get("id").asLong();
 
 				// Filter by tortoise ID
 				if (id == tortoiseId) {
-					long top = extractLong(jsonStr, "top");
-					long tour = extractLong(jsonStr, "tour");
-					long cellule = extractLong(jsonStr, "cellule");
-					long total = extractLong(jsonStr, "total");
-					long maxcel = extractLong(jsonStr, "maxcel");
+					long top = inputJson.get("top").asLong();
+					long tour = inputJson.get("tour").asLong();
+					long cellule = inputJson.get("cellule").asLong();
+					long total = inputJson.get("total").asLong();
+					long maxcel = inputJson.get("maxcel").asLong();
 
 					// Calculate cumulative cells traveled
 					long nbCellsParcourus = cellule + (tour * maxcel);
@@ -105,7 +100,15 @@ public class MyTortoiseBolt implements IRichBolt {
 					String nom = TORTOISE_NAMES[(int)(id % TORTOISE_NAMES.length)];
 
 					// Build output JSON
-					String result = buildJson(id, top, nom, nbCellsParcourus, total, maxcel);
+					ObjectNode output = mapper.createObjectNode();
+					output.put("id", id);
+					output.put("top", top);
+					output.put("nom", nom);
+					output.put("nbCellsParcourus", nbCellsParcourus);
+					output.put("total", total);
+					output.put("maxcel", maxcel);
+
+					String result = mapper.writeValueAsString(output);
 					logger.info("Tortoise " + id + " => " + result + " treated!");
 
 					collector.emit(t, new Values(result));
