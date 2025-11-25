@@ -21,7 +21,7 @@ public class TopologyT1 {
 		int portOUTPUT = Integer.parseInt(args[1]);
     	
 		/*Création du spout*/
-    	InputStreamSpout spout = new InputStreamSpout("127.0.0.1", portINPUT);
+    	InputStreamSpout spout = new InputStreamSpout("client", portINPUT);
     	/*Création de la topologie*/
     	TopologyBuilder builder = new TopologyBuilder();
         /*Affectation à la topologie du spout*/

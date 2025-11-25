@@ -10,7 +10,7 @@ import java.io.*;
 public class StreamListner {
 
     public static void main(String[] args){
-    String host = "127.0.0.1";
+    String host = "supervisor";
     int port = Integer.parseInt( args[0] );
 
         try (Socket socket = new Socket(host, port)) {
