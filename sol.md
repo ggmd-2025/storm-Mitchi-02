@@ -70,67 +70,14 @@ storm jar target/stormTP-0.1-jar-with-dependencies.jar stormTP.topology.Topology
 
 **Objective**: Implement a stateful bolt that accumulates bonus points every 15 observations.
 
-### Step 1: Implement ComputeBonusBolt
-
 Create file: `/storm/examples/ggmd-storm-topology/src/main/java/stormTP/operator/ComputeBonusBolt.java`
-
-Key requirements:
-
--   **Stateful bolt**: Extends `BaseStatefulBolt<KeyValueState<String, Integer>>`
--   Must be preceded by: `MyTortoiseBolt` and `GiveRankBolt` in pipeline
--   Input schema: `(id, top, rang, total, maxcel)`
--   Output schema: `(id, tops, score)`
--   Bonus calculation:
-    -   Every 15 tops (observations), accumulate bonus points
-    -   Bonus points = `total - parseInt(rang)`
-    -   Example: 10 total participants, rank "1" = 9 points, rank "2ex" = 8 points
-    -   `tops` field format: "t5-t14" (first and last top in the 15-top window)
-    -   `score` field: cumulative total of all bonuses earned so far
-
-Algorithm:
-
-1. Maintain state: `currentScore_<id>` and `lastBonusTop_<id>`
-2. For each tuple:
-    - If `top % 15 == 0` (bonus calculation point):
-        - Extract rank from previous tuple's rang field
-        - Calculate bonus: `bonus = total - parseInt(rang.replace("ex", ""))`
-        - Add to score: `currentScore = state.get("score_" + id, 0) + bonus`
-        - Store new score in state
-        - Emit: (id, "t{top-14}-t{top}", currentScore)
-
-### Step 2: Implement Exit4Bolt
 
 Create file: `/storm/examples/ggmd-storm-topology/src/main/java/stormTP/operator/Exit4Bolt.java`
 
-Key requirements:
-
--   Terminal bolt (implements IRichBolt)
--   Constructor takes: `int port`
--   Input schema: `(id, tops, score)` OR `(id, top, nom, points)` (check task.md line 56)
--   Note: task.md line 51 says output is (id, tops, score), but line 56 says Exit4Bolt takes (id, top, nom, points)
--   Reconcile by using: Input to Exit4Bolt is `(id, tops, score)` from ComputeBonusBolt
--   Output: JSON to port
-
-### Step 3: Create TopologyT4
-
 Create file: `/storm/examples/ggmd-storm-topology/src/main/java/stormTP/topology/TopologyT4.java`
 
-Key requirements:
-
--   Topology structure:
-    ```
-    InputStreamSpout (9001)
-      → MyTortoiseBolt (id=3)
-      → GiveRankBolt
-      → ComputeBonusBolt
-      → Exit4Bolt (9005)
-    ```
--   Use `fieldsGrouping()` for state grouping
--   State should be partitioned by tortoise ID
-
-### Step 4: Build and Test
-
 ```bash
+#Terminal 3
 mvn clean package
 storm jar target/stormTP-0.1-jar-with-dependencies.jar stormTP.topology.TopologyT4 9001 9005
 
@@ -138,11 +85,14 @@ storm jar target/stormTP-0.1-jar-with-dependencies.jar stormTP.topology.Topology
 ./startListner.sh 9005
 ```
 
-**Expected Output**: (emitted every 15 observations)
+**Output**:
 
 ```json
-{"id": 3, "tops": "t0-t14", "score": 8}
-{"id": 3, "tops": "t15-t29", "score": 15}
+Received: {"id":3,"tops":"t1-t15","score":9}
+Received: {"id":3,"tops":"t1-t15","score":9}
+Received: {"id":3,"tops":"t1-t15","score":9}
+Received: {"id":3,"tops":"t1-t15","score":9}
+Received: {"id":3,"tops":"t1-t15","score":9}
 ```
 
 ---
@@ -151,70 +101,14 @@ storm jar target/stormTP-0.1-jar-with-dependencies.jar stormTP.topology.Topology
 
 **Objective**: Implement a stateless windowed bolt for speed calculation.
 
-### Step 1: Implement SpeedBolt
-
 Create file: `/storm/examples/ggmd-storm-topology/src/main/java/stormTP/operator/SpeedBolt.java`
-
-Key requirements:
-
--   **Windowed stateless bolt**: Extends `BaseWindowedBolt`
--   Input schema: `(id, top, nom, nbCellsParcourus, total, maxcel)` (from MyTortoiseBolt)
--   Output schema: `(id, nom, tops, vitesse)`
--   Window configuration: 10 tuples window, sliding every 5 tuples
--   Speed calculation:
-    -   Collect all tuples in window (10 tuples)
-    -   Find min and max `nbCellsParcourus` in window
-    -   Speed = `(max - min) / 10 cells per top`
-    -   `tops` format: "t{first_top}-t{last_top}"
-    -   `vitesse`: decimal with 2 decimal places
-
-Algorithm:
-
-1. Receive TupleWindow with 10 tuples
-2. Parse each tuple's JSON
-3. Extract: id, nom, top, nbCellsParcourus
-4. Find minimum and maximum nbCellsParcourus
-5. Calculate speed = (max - min) / 10
-6. Get first and last top values
-7. Build output tuple: (id, nom, "t{first}-t{last}", speed)
-
-Bolt configuration in topology:
-
-```java
-builder.setBolt("speed", new SpeedBolt()
-    .withWindow(new Count(10), new Count(5))  // 10-tuple window, slide 5
-    , parallelism)
-    .shuffleGrouping("tortoiseBolt");
-```
-
-### Step 2: Implement Exit5Bolt
 
 Create file: `/storm/examples/ggmd-storm-topology/src/main/java/stormTP/operator/Exit5Bolt.java`
 
-Key requirements:
-
--   Terminal bolt (implements IRichBolt)
--   Input schema: `(id, nom, tops, vitesse)` (note: task.md line 69 says (id, top, nom, vitesse))
--   Output to TCP port
-
-### Step 3: Create TopologyT5
-
 Create file: `/storm/examples/ggmd-storm-topology/src/main/java/stormTP/topology/TopologyT5.java`
 
-Key requirements:
-
--   Topology structure:
-    ```
-    InputStreamSpout (9001)
-      → MyTortoiseBolt (id=3)
-      → SpeedBolt (window: 10 tuples, slide 5)
-      → Exit5Bolt (9005)
-    ```
--   Use `shuffleGrouping()` (no state needed)
-
-### Step 4: Build and Test
-
 ```bash
+#Terminal 3
 mvn clean package
 storm jar target/stormTP-0.1-jar-with-dependencies.jar stormTP.topology.TopologyT5 9001 9005
 
@@ -222,11 +116,10 @@ storm jar target/stormTP-0.1-jar-with-dependencies.jar stormTP.topology.Topology
 ./startListner.sh 9005
 ```
 
-**Expected Output**: (emitted every 5 tuples after first 10)
+**Output**:
 
 ```json
-{"id": 3, "nom": "Caroline", "tops": "t0-t9", "vitesse": 3.2}
-{"id": 3, "nom": "Caroline", "tops": "t5-t14", "vitesse": 2.8}
+
 ```
 
 ---
