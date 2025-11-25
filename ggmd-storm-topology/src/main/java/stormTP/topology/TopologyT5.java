@@ -3,6 +3,7 @@ package stormTP.topology;
 import org.apache.storm.Config;
 import org.apache.storm.StormSubmitter;
 import org.apache.storm.topology.TopologyBuilder;
+import org.apache.storm.topology.base.BaseWindowedBolt.Count;
 
 import stormTP.operator.Exit5Bolt;
 import stormTP.operator.InputStreamSpout;
@@ -34,8 +35,8 @@ public class TopologyT5 {
 			.shuffleGrouping("masterStream");
 
 		// Add SpeedBolt with windowing: 10-tuple window, sliding every 5 tuples
-		// Note: Window configuration is applied via BaseWindowedBolt configuration
-		builder.setBolt("speed", new SpeedBolt(), nbExecutors)
+		builder.setBolt("speed", new SpeedBolt()
+			.withWindow(new Count(10), new Count(5)), nbExecutors)
 			.shuffleGrouping("tortoise");
 
 		// Add exit bolt to output speed data

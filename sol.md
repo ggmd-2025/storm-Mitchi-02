@@ -119,7 +119,8 @@ storm jar target/stormTP-0.1-jar-with-dependencies.jar stormTP.topology.Topology
 **Output**:
 
 ```json
-
+Received: {"id":3,"nom":"David","tops":"t2-t6","vitesse":0.6}
+Received: {"id":3,"nom":"David","tops":"t2-t6","vitesse":0.6}
 ```
 
 ---
